@@ -1,10 +1,11 @@
 """The better_thermostat component."""
 
-import logging
 from asyncio import Lock
+import logging
+
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
@@ -14,13 +15,12 @@ from .utils.const import (
     CONF_NO_SYSTEM_MODE_OFF,
     CONF_WINDOW_TIMEOUT,
     CONF_WINDOW_TIMEOUT_AFTER,
-    CONF_ECO_TEMPERATURE,
     CalibrationMode,
 )
 
 _LOGGER = logging.getLogger(__name__)
 DOMAIN = "better_thermostat"
-PLATFORMS = [Platform.CLIMATE]
+PLATFORMS = [Platform.CLIMATE, Platform.SENSOR, Platform.NUMBER, Platform.SWITCH]
 CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Schema({})}, extra=vol.ALLOW_EXTRA)
 
 config_entry_update_listener_lock = Lock()
@@ -38,7 +38,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
     try:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Setup climate platform first to ensure entity is available for other platforms
+        await hass.config_entries.async_forward_entry_setups(entry, [Platform.CLIMATE])
+        # Setup other platforms that depend on climate entity
+        await hass.config_entries.async_forward_entry_setups(
+            entry, [Platform.SENSOR, Platform.NUMBER, Platform.SWITCH]
+        )
     except Exception:
         _LOGGER.exception(
             "better_thermostat: Fehler beim Laden der Plattformen für Entry %s",
@@ -94,7 +99,9 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
                     {CONF_CALIBRATION_MODE: CalibrationMode.AGGRESIVE_CALIBRATION}
                 )
             else:
-                trv["advanced"].update({CONF_CALIBRATION_MODE: CalibrationMode.DEFAULT})
+                trv["advanced"].update(
+                    {CONF_CALIBRATION_MODE: CalibrationMode.MPC_CALIBRATION}
+                )
         hass.config_entries.async_update_entry(config_entry, data=new, version=4)
 
     if config_entry.version == 4:
@@ -111,8 +118,9 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     if config_entry.version == 6:
         new = {**config_entry.data}
         # Add ECO target temperature with default value if not present
-        if CONF_ECO_TEMPERATURE not in new:
-            new[CONF_ECO_TEMPERATURE] = 18.0
+        # ECO mode removed; preserved eco preset via PRESET_ECO - wtom: 2026-01-02
+        # if "eco_temperature" not in new:
+        #     new["eco_temperature"] = 18.0
         hass.config_entries.async_update_entry(config_entry, data=new, version=7)
 
     _LOGGER.info("Migration to version %s successful", config_entry.version)

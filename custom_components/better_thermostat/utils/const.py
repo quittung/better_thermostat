@@ -1,15 +1,15 @@
 """Constants for Better Thermostat."""
 
-import os
-import json
 from enum import IntEnum, StrEnum
-
+import json
 import logging
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.config_validation import make_entity_service_schema
+import os
+
 from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.const import ATTR_TEMPERATURE
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.config_validation import make_entity_service_schema
+import voluptuous as vol
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,11 +48,11 @@ CONF_CALIBRATION_MODE = "calibration_mode"
 CONF_HEAT_AUTO_SWAPPED = "heat_auto_swapped"
 CONF_MODEL = "model"
 CONF_HOMEMATICIP = "homematicip"
+CONF_PRESETS = "presets"
 CONF_INTEGRATION = "integration"
 CONF_NO_SYSTEM_MODE_OFF = "no_off_system_mode"
 CONF_TOLERANCE = "tolerance"
 CONF_TARGET_TEMP_STEP = "target_temp_step"
-CONF_ECO_TEMPERATURE = "eco_temperature"
 
 SUPPORT_FLAGS = (
     ClimateEntityFeature.TARGET_TEMPERATURE
@@ -69,9 +69,12 @@ ATTR_VALVE_POSITION = "valve_position"
 ATTR_STATE_HUMIDIY = "humidity"
 ATTR_STATE_MAIN_MODE = "main_mode"
 ATTR_STATE_HEATING_POWER = "heating_power"
+ATTR_STATE_HEAT_LOSS = "heat_loss"
+ATTR_STATE_HEAT_LOSS_STATS = "heat_loss_stats"
 ATTR_STATE_HEATING_STATS = "heating_stats"
 ATTR_STATE_ERRORS = "errors"
 ATTR_STATE_BATTERIES = "batteries"
+ATTR_STATE_OFF_TEMPERATURE = "off_temperature"
 # ECO mode logic removed; keep eco temperature for preset support
 
 SERVICE_RESTORE_SAVED_TARGET_TEMPERATURE = "restore_saved_target_temperature"
@@ -110,7 +113,7 @@ class CalibrationType(StrEnum):
 
     TARGET_TEMP_BASED = "target_temp_based"
     LOCAL_BASED = "local_calibration_based"
-    HYBRID = "hybrid_calibration"
+    DIRECT_VALVE_BASED = "direct_valve_based"
 
 
 class CalibrationMode(StrEnum):
@@ -123,3 +126,22 @@ class CalibrationMode(StrEnum):
     MPC_CALIBRATION = "mpc_calibration"
     TPI_CALIBRATION = "tpi_calibration"
     PID_CALIBRATION = "pid_calibration"
+
+
+# Heating power calibration constants
+# These bounds represent realistic heating rates for residential heating systems
+MIN_HEATING_POWER = 0.005  # °C/min - Very slow heating (poor insulation, cold climate)
+MAX_HEATING_POWER = 0.2  # °C/min - Very fast heating (oversized system, small room)
+
+# Heat loss estimation bounds (cooling rate) for residential buildings
+MIN_HEAT_LOSS = 0.001  # °C/min - very slow cooling
+MAX_HEAT_LOSS = 0.05  # °C/min - very fast cooling / high loss
+
+# Valve position calculation constants for heating_power_valve_position()
+VALVE_MIN_THRESHOLD_TEMP_DIFF = (
+    0.3  # °C - Above this diff, enforce minimum valve opening
+)
+VALVE_MIN_OPENING_LARGE_DIFF = 0.15  # Minimum 15% valve opening when diff > 0.3°C
+VALVE_MIN_BASE = 0.05  # Base minimum valve opening
+VALVE_MIN_SMALL_DIFF_THRESHOLD = 0.1  # °C - Threshold for proportional minimum
+VALVE_MIN_PROPORTIONAL_SLOPE = 0.5  # Slope for proportional minimum calculation

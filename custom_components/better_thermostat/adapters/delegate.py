@@ -1,10 +1,12 @@
 """Delegate adapter."""
 
 import logging
+
 from homeassistant.helpers.importlib import async_import_module
 
-from ..utils.retry import async_retry
 from custom_components.better_thermostat.utils.helpers import round_by_step
+
+from ..utils.retry import async_retry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,11 +102,8 @@ async def set_temperature(self, entity_id, temperature):
         global_cfg_step = getattr(self, "bt_target_temp_step", None)
         if global_cfg_step in (0, 0.0):
             global_cfg_step = None
-        device_step = (
-            self.hass.states.get(entity_id).attributes.get("target_temp_step")
-            if self.hass.states.get(entity_id)
-            else None
-        )
+        state = self.hass.states.get(entity_id)
+        device_step = state.attributes.get("target_temp_step") if state else None
         step = per_trv_step or global_cfg_step or device_step or 0.5
         rounded = round_by_step(float(t), float(step))
     except Exception:
@@ -194,10 +193,32 @@ async def set_valve(self, entity_id, valve):
     except Exception:
         target_pct = valve
     try:
-        valve_entity = (self.real_trvs.get(entity_id, {}) or {}).get(
-            "valve_position_entity"
+        trv_state = self.real_trvs.get(entity_id, {}) or {}
+
+        # Check if the override_set_valve method is implemented in the model quirks of the trv
+        # This takes precedence over the standard adapter set_valve
+        _override_set_valve = getattr(
+            trv_state.get("model_quirks"), "override_set_valve", None
         )
-        if valve_entity:
+        if _override_set_valve is not None:
+            ok = await _override_set_valve(self, entity_id, target_pct)
+            if ok:
+                try:
+                    self.real_trvs[entity_id]["last_valve_percent"] = int(target_pct)
+                    self.real_trvs[entity_id]["last_valve_method"] = "override"
+                except Exception:
+                    _LOGGER.exception(
+                        "better_thermostat %s: Failed to set last_valve_percent or last_valve_method for %s in override",
+                        getattr(self, "device_name", "unknown"),
+                        entity_id,
+                    )
+                return True
+
+        valve_entity = trv_state.get("valve_position_entity")
+        valve_writable = trv_state.get("valve_position_writable")
+
+        # Only write to a helper entity when we know it's writable.
+        if valve_entity and valve_writable is True:
             await self.real_trvs[entity_id]["adapter"].set_valve(
                 self, entity_id, target_pct
             )
@@ -212,26 +233,6 @@ async def set_valve(self, entity_id, valve):
                     exc,
                 )
             return True
-        # Fallback: quirks override
-        try:
-            from custom_components.better_thermostat.model_fixes.model_quirks import (
-                override_set_valve as _override_set_valve,
-            )
-        except Exception:
-            _override_set_valve = None
-        if _override_set_valve is not None:
-            ok = await _override_set_valve(self, entity_id, target_pct)
-            if ok:
-                try:
-                    self.real_trvs[entity_id]["last_valve_percent"] = int(target_pct)
-                    self.real_trvs[entity_id]["last_valve_method"] = "override"
-                except Exception:
-                    _LOGGER.exception(
-                        "better_thermostat %s: Failed to set last_valve_percent or last_valve_method for %s in override",
-                        getattr(self, "device_name", "unknown"),
-                        entity_id,
-                    )
-            return bool(ok)
     except Exception:
         _LOGGER.debug(
             "better_thermostat %s: delegate.set_valve failed for %s",
