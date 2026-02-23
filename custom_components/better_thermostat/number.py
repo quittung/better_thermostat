@@ -95,7 +95,11 @@ class BetterThermostatPresetNumber(NumberEntity, RestoreEntity):
         self._bt_climate = bt_climate
         self._preset_mode = preset_mode
         self._attr_unique_id = f"{bt_climate.unique_id}_preset_{preset_mode}"
-        self._attr_name = f"Preset {preset_mode.capitalize()}"
+        # Use "Min" suffix when cooler is present, plain name otherwise
+        if bt_climate.cooler_entity_id is not None:
+            self._attr_name = f"{preset_mode.capitalize()} Min"
+        else:
+            self._attr_name = f"{preset_mode.capitalize()}"
 
         # Set min/max/step based on climate entity configuration
         self._attr_native_min_value = bt_climate.min_temp
@@ -160,7 +164,7 @@ class BetterThermostatPresetCoolNumber(NumberEntity, RestoreEntity):
         self._bt_climate = bt_climate
         self._preset_mode = preset_mode
         self._attr_unique_id = f"{bt_climate.unique_id}_preset_{preset_mode}_cool"
-        self._attr_name = f"Preset {preset_mode.capitalize()} Cool"
+        self._attr_name = f"{preset_mode.capitalize()} Max"
 
         # Set min/max/step based on climate entity configuration
         self._attr_native_min_value = bt_climate.min_temp
